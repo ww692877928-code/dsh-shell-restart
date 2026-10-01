@@ -1,0 +1,46 @@
+{
+  "name": "dsh-shell-restart",
+  "version": "0.1.0",
+  "description": "Windows 上的 DSH 桌面外壳自助重启：排定任务计划停掉宿主与它拉起的 dsh，再用 WMI 脱离控制台拉起新实例。零依赖，模型可调用。",
+  "license": "MIT",
+  "author": "ww692877928-code <https://github.com/ww692877928-code>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ww692877928-code/dsh-shell-restart.git"
+  },
+  "homepage": "https://github.com/ww692877928-code/dsh-shell-restart#readme",
+  "bugs": {
+    "url": "https://github.com/ww692877928-code/dsh-shell-restart/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "desktop",
+    "electron",
+    "restart",
+    "windows",
+    "schtasks"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./shell": "./src/shell.js"
+  },
+  "files": [
+    "src",
+    "tools",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/shell.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
