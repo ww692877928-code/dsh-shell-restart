@@ -314,7 +314,33 @@ if ($newDsh.Count -eq 0) {
   Write-Log '   3) 应用窗口上是否弹了启动失败对话框，看它的提示文字'
 }
 Write-Log '助手结束'
+
+# 自删任务：一次性任务跑完就是 Next Run Time = N/A，留着只会在任务计划里积灰。
+# 放在最后且 best-effort —— 删不掉也不影响这次重启的结果（插件下次加载时还会再扫一遍并清掉）。
+try {
+  schtasks /Delete /TN "${TASK_NAME}" /F 2>$null | Out-Null
+  Write-Log '已自删计划任务'
+} catch {
+  Write-Log ('自删计划任务失败（不影响重启）：' + $_.Exception.Message)
+}
 `;
+}
+
+/**
+ * 这个计划任务是不是"已经跑完的一次性任务"？
+ *
+ * schtasks 对跑完的 ONCE 任务会显示 `Next Run Time: N/A`（中文系统可能是"不适用"）。
+ * **只有明确的 N/A 才算跑完。**
+ *
+ * ⚠️ 真实事故（本条就是它的修复）：最初我把"空值"也当成跑完（`if (!text) return true`），
+ * 结果插件的加载时清理把**刚排好、还没触发**的重启任务也删了。实测复现：创建任务后立刻探针，
+ * `nextRun` 是空串（字段没解析到 ≠ 任务已跑完）→ 被当成残留删掉。现在口径改为"**不知道就不动**"：
+ * 宁可留一个跑完的垃圾任务，也绝不误删待执行的重启。
+ */
+export function isTaskFinished(nextRun) {
+  const text = String(nextRun ?? '').trim();
+  if (!text) return false;                       // 空 = 不知道 ≠ 已跑完（见上面的事故说明）
+  return /^(N\/A|n\/a|不适用|无|从未运行|-+)$/.test(text);
 }
 
 /**
