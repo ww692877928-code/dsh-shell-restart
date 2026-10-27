@@ -17,10 +17,42 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   assessProbe, buildCreateArgs, buildDeleteArgs, buildHelperScript, computeStartTime,
-  formatStatus, normalizeDelay, parseElectronCommandLine, psQuote, summarizeBaseline,
+  formatStatus, isTaskFinished, normalizeDelay, parseElectronCommandLine, psQuote, summarizeBaseline,
   withBom, DEFAULT_DELAY_SECONDS, MAX_DELAY_SECONDS, MIN_DELAY_SECONDS, TASK_NAME,
 } from '../src/shell.js';
 import { writeHelperScript } from '../src/win.js';
+
+test('isTaskFinished：只有明确的 N/A 才算跑完；**缺字段一律不算**（不要动）', () => {
+  for (const finished of ['N/A', 'n/a', '不适用', '无', '从未运行', '-']) {
+    assert.equal(isTaskFinished(finished), true, `${finished} 应判为已跑完`);
+  }
+  // ⚠️ 真实事故回归：最初把空值也当"已跑完"，导致加载时清理把**刚排好、还没触发**的
+  // 重启任务删掉了（实测复现：创建任务后立刻探针，nextRun 是空串，于是被当成残留）。
+  for (const unknown of ['', '   ', undefined, null]) {
+    assert.equal(isTaskFinished(unknown), false, `缺字段（${JSON.stringify(unknown)}）只代表"不知道"，绝不能当成已跑完`);
+  }
+  for (const pending of ['2026/10/2 12:30:00', '2026-10-02 12:30', '明天 12:30']) {
+    assert.equal(isTaskFinished(pending), false, `${pending} 是待执行任务，不能动`);
+  }
+});
+
+test('生成的助手脚本会自删计划任务（且自删失败不影响重启结果）', () => {
+  const script = buildHelperScript({
+    exe: 'D:\\app\\electron.exe',
+    appDir: 'D:\\app',
+    launchArgs: '.',
+    logPath: 'C:\\log\\restart-helper.log',
+    delaySeconds: 5,
+    appPid: 4242,
+    dshPids: [99],
+    portRange: [3080, 3083],
+  });
+  assert.match(script, new RegExp(`schtasks /Delete /TN "${TASK_NAME}" /F`), '应包含自删任务的命令');
+  assert.match(script, /已自删计划任务/);
+  // 必须放在"助手结束"之后，且包在 try 里 —— 自删失败不能影响这次重启
+  assert.ok(script.indexOf('助手结束') < script.indexOf('schtasks /Delete'), '自删应在日志收尾之后');
+  assert.match(script, /try \{\s*[\s\S]*schtasks \/Delete[\s\S]*catch \{/, '自删必须 best-effort');
+});
 
 test('normalizeDelay：默认值 / 上下限 / 非数字', () => {
   assert.equal(normalizeDelay(undefined).seconds, DEFAULT_DELAY_SECONDS);
