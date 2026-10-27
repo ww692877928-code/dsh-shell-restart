@@ -1,6 +1,6 @@
 {
   "name": "dsh-shell-restart",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Windows 上的 DSH 桌面外壳自助重启：排定任务计划停掉宿主与它拉起的 dsh，再用 WMI 脱离控制台拉起新实例。零依赖，模型可调用。",
   "license": "MIT",
   "author": "ww692877928-code <https://github.com/ww692877928-code>",
