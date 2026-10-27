@@ -22,8 +22,8 @@ import {
   parseElectronCommandLine, summarizeBaseline, TASK_NAME,
 } from './shell.js';
 import {
-  createTask, deleteTask, helperLogPath, helperScriptPath, probe, readHelperLogTail,
-  writeHelperScript,
+  cleanupFinishedTask, createTask, deleteTask, helperLogPath, helperScriptPath, probe,
+  readHelperLogTail, writeHelperScript,
 } from './win.js';
 
 export const name = 'desktop-restart';
@@ -70,6 +70,18 @@ export function apply(ctx, rawConfig = {}) {
     && config.portRange.every((n) => Number.isInteger(n) && n > 0 && n < 65536)
     ? [config.portRange[0], config.portRange[1]]
     : [3080, 3083];
+
+  // 加载时顺手清掉"已经跑完"的残留计划任务（best-effort）：
+  // 助手脚本虽然会自删，但历史遗留版本与自删失败的情况都会留下任务，留在任务计划里只是积灰。
+  // 只删 Next Run Time = N/A 的（已跑完），带未来时间点的绝不动。
+  try {
+    probe(hostPid())
+      .then((info) => cleanupFinishedTask(info))
+      .then((result) => {
+        if (result?.cleaned) ctx.logger?.info?.(`[desktop-restart] ${result.reason}`);
+      })
+      .catch(() => { /* 清理是锦上添花，失败一律忽略 */ });
+  } catch { /* 同上 */ }
 
   ctx.tools.register({
     name: 'desktop_shell_status',
