@@ -151,6 +151,15 @@ npm test        :: node --test test/shell.test.mjs   —— 12 条，全绿
 - 开发版（`electron.exe .`）、显式目录版、**打包版（无参数）**三种命令行都要能解析出 exe/参数/工作目录；
 - 非 Windows、非桌面宿主、解析不出 exe —— 三种情况都必须**拒绝重启**而不是硬来。
 
+## 计划任务的生命周期（不留垃圾）
+
+`DshDesktopSelfRestart` 是**一次性**任务，跑完 `Next Run Time` 就是 `N/A`。为了避免任务计划里积灰：
+
+1. **助手脚本跑完自删**（best-effort，包在 `try` 里）—— 删不掉也不影响这次重启的结果；
+2. **插件加载时再扫一遍**：只删 `Next Run Time = N/A`（已跑完）的残留任务，
+   **带未来时间点的绝不动**（那可能是你刚排的、还没触发的重启）；
+3. 手动取消随时可用：`cancel_desktop_restart`（删任务并报告结果）。
+
 ## 验证
 
 ```bat
