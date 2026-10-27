@@ -11,7 +11,7 @@ import { execFile } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { TASK_NAME, buildCreateArgs, buildDeleteArgs, withBom } from './shell.js';
+import { TASK_NAME, buildCreateArgs, buildDeleteArgs, withBom, isTaskFinished } from './shell.js';
 
 /**
  * 助手日志与脚本的落点（放 LOCALAPPDATA，避免污染项目目录）。
@@ -111,9 +111,17 @@ $out.stopShellCount = @(Get-CimInstance Win32_Process -Filter "Name='electron.ex
 
 $t = schtasks /Query /TN "${TASK_NAME}" /FO LIST /V 2>$null
 if ($LASTEXITCODE -eq 0 -and $t) {
-  $next = ($t | Select-String -Pattern 'Next Run Time' | Select-Object -First 1).Line
-  $last = ($t | Select-String -Pattern 'Last Result' | Select-Object -First 1).Line
-  $out.pendingTask = [ordered]@{ name = '${TASK_NAME}'; nextRun = ("$next" -replace '^\\s*Next Run Time:\\s*', ''); lastResult = ("$last" -replace '^\\s*Last Result:\\s*', '') }
+  # 字段名按中英双模式匹配（本机实测是英文，但中文系统可能是中文），
+  # 并额外保留原始行：这样"字段缺失(nextRun='')"与"已跑完(nextRun='N/A')"能区分开 ——
+  # 二者混淆过一次，导致加载时清理误删了待执行的重启任务。
+  $next = ($t | Select-String -Pattern 'Next Run Time|下次运行时间' | Select-Object -First 1).Line
+  $last = ($t | Select-String -Pattern 'Last Result|上次运行结果' | Select-Object -First 1).Line
+  $out.pendingTask = [ordered]@{
+    name = '${TASK_NAME}'
+    nextRun = ("$next" -replace '^\\s*(Next Run Time|下次运行时间):\\s*', '')
+    lastResult = ("$last" -replace '^\\s*(Last Result|上次运行结果):\\s*', '')
+    rawNext = "$next"
+  }
 }
 $out | ConvertTo-Json -Depth 6 -Compress
 `;
@@ -152,4 +160,22 @@ export async function createTask(scriptPath, hhmm) {
 /** 取消重启任务。 */
 export async function deleteTask() {
   return runExe('schtasks.exe', buildDeleteArgs());
+}
+
+/**
+ * 清掉"已经跑完"的残留计划任务（best-effort）。
+ *
+ * 为什么需要它：助手脚本虽然会自删，但历史遗留（本次之前的版本）与自删失败的情况都会留下任务。
+ * 判据只有一条 —— **Next Run Time 是 N/A（已跑完）**；带未来时间点的绝不动，那可能是待执行的重启。
+ */
+export async function cleanupFinishedTask(info) {
+  const pending = info && info.pendingTask;
+  if (!pending) return { cleaned: false, reason: '没有残留任务' };
+  if (!isTaskFinished(pending.nextRun)) {
+    return { cleaned: false, reason: `任务还在等待执行（${pending.nextRun}），不动它` };
+  }
+  const result = await deleteTask();
+  return result.code === 0
+    ? { cleaned: true, reason: `已删除跑完的残留任务（上次结果 ${pending.lastResult ?? '?'}）` }
+    : { cleaned: false, reason: `删除残留任务失败（schtasks 退出码 ${result.code}）` };
 }
